@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Criador de Bingo Americano</title>
+  <link rel="icon" type="image/png" href="Img/Logo.jpg">
+  <style>
+    :root{--bg:#f3e6e9;--accent:#222;--outline:#000000;--number-fill:#ffe600}
+    body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); margin:0; padding:24px; color:#222}
+    .container{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:360px 1fr;gap:20px}
+    .panel{background:#fff;border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+    h1{margin:0 0 14px;font-size:20px}
+    label{display:block;margin:8px 0;font-weight:600}
+    input[type=color], input[type=file], select, input[type=number]{width:100%;padding:8px;border-radius:8px;border:1px solid #ddd}
+    button{display:inline-block;padding:10px 14px;border-radius:10px;border:0;background:#111;color:#fff;cursor:pointer;margin-top:12px}
+    button.secondary{background:#666}
+    .controls{display:flex;flex-direction:column}
+    .preview-wrap{display:flex;align-items:center;justify-content:center}
+    #cardCanvas{background:#fff;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.15)}
+    .hint{font-size:13px;color:#666;margin-top:8px}
+    .row{display:flex;gap:8px}
+    footer{margin-top:16px;font-size:13px;color:#444}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <h1>Criador de Bingo Americano</h1>
+      <div class="controls">
+        <label>Cor da borda do card</label>
+        <input id="borderColor" type="color" value="#000000">
+
+        <label>Cor do fundo externo (área fora do card)</label>
+        <input id="outerColor" type="color" value="#d39ea3">
+
+        <label>Cor do contorno dos números</label>
+        <input id="outlineColor" type="color" value="#000000">
+
+        <label>Cor do preenchimento dos números</label>
+        <input id="numberFill" type="color" value="#ffe600">
+
+        <label>Upload da imagem de fundo (opcional)</label>
+        <input id="bgImageFile" type="file" accept="image/*">
+
+        <label>Opacidade da imagem de fundo</label>
+        <input id="bgOpacity" type="range" min="0" max="1" step="0.01" value="0.6">
+
+        <label>Tamanho (px) do card (quadrado desenhado no centro)</label>
+        <input id="cardSize" type="number" value="400" min="400" max="1600">
+
+        <label>Fonte do título</label>
+        <select id="fontChoice">
+          <option value="Impact, sans-serif">Impact</option>
+          <option value="'Bungee', cursive">Bungee</option>
+          <option value="'Anton', sans-serif">Anton</option>
+          <option value="'Inter', Arial, sans-serif" selected>Inter (padrão)</option>
+        </select>
+
+        <div style="margin-top:10px">
+          <button id="generate">Gerar números (aleatório justo)</button>
+          <button id="download" class="secondary">Baixar como PNG</button>
+        </div>
+
+        <div class="hint">Regras implementadas: B 1-15, I 16-30, N 31-45 (centro = 00), G 46-60, O 61-75. Cada coluna sorteia números sem repetição.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h1>Pré-visualização</h1>
+      <div class="preview-wrap">
+        <canvas id="cardCanvas" width="900" height="1000"></canvas>
+      </div>
+      <footer>
+        Abra este arquivo no VS Code e clique em "Gerar números". Quando estiver satisfeito, clique em "Baixar como PNG".
+      </footer>
+    </div>
+  </div>
+
+<script>
+// Utilitários
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r}
+
+// Elementos
+const canvas=document.getElementById('cardCanvas');
+const ctx=canvas.getContext('2d');
+const borderColorEl=document.getElementById('borderColor');
+const outerColorEl=document.getElementById('outerColor');
+const outlineColorEl=document.getElementById('outlineColor');
+const numberFillEl=document.getElementById('numberFill');
+const bgFileEl=document.getElementById('bgImageFile');
+const bgOpacityEl=document.getElementById('bgOpacity');
+const cardSizeEl=document.getElementById('cardSize');
+const generateBtn=document.getElementById('generate');
+const downloadBtn=document.getElementById('download');
+const fontChoice=document.getElementById('fontChoice');
+
+let bgImage=null;
+let currentCardSize=parseInt(cardSizeEl.value,10);
+
+bgFileEl.addEventListener('change',e=>{
+  const f = e.target.files[0];
+  if(!f) { bgImage=null; drawCard(); return }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = ()=>{ bgImage = img; drawCard() }
+    img.src = ev.target.result;
+  }
+  reader.readAsDataURL(f);
+})
+
+// gera um cartão seguindo as regras do Bingo americano
+function generateNumbers(){
+  const B = shuffle(range(1,15)).slice(0,5);
+  const I = shuffle(range(16,30)).slice(0,5);
+  const Nvals = shuffle(range(31,45)).slice(0,4); // 4 números + centro = 00
+  const G = shuffle(range(46,60)).slice(0,5);
+  const O = shuffle(range(61,75)).slice(0,5);
+  // montar matriz 5x5 com center = '00'
+  const matrix = Array.from({length:5}, ()=>Array(5).fill(null));
+  for(let r=0;r<5;r++){ matrix[r][0]=String(B[r]).padStart(2,'0'); }
+  for(let r=0;r<5;r++){ matrix[r][1]=String(I[r]).padStart(2,'0'); }
+  // coluna N -> r 0,1 -> Nvals[0..1]; r2 -> '00'; r3,r4 -> Nvals[2..3]
+  matrix[0][2]=String(Nvals[0]).padStart(2,'0');
+  matrix[1][2]=String(Nvals[1]).padStart(2,'0');
+  matrix[2][2]='00';
+  matrix[3][2]=String(Nvals[2]).padStart(2,'0');
+  matrix[4][2]=String(Nvals[3]).padStart(2,'0');
+  for(let r=0;r<5;r++){ matrix[r][3]=String(G[r]).padStart(2,'0'); }
+  for(let r=0;r<5;r++){ matrix[r][4]=String(O[r]).padStart(2,'0'); }
+  return matrix;
+}
+
+let currentMatrix = generateNumbers();
+
+// Desenha o cartão no canvas com todas as opções
+function drawCard(){
+  const W = canvas.width = parseInt(cardSizeEl.value,10);
+  const H = canvas.height = Math.round(W * 1.05); // deixamos proporção mais compacta
+  currentCardSize = W;
+  // limpar e preencher com cor externa sólida
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = outerColorEl.value;
+  ctx.fillRect(0,0,W,H);
+
+  // definir margem e header menores para centralizar melhor
+  const margin = Math.round(W*0.045);
+  const headerH = Math.round(H*0.12);
+  const gridSize = W - margin*2;
+
+  // título BINGO - somente a versão menor (como pediu)
+  ctx.save();
+  const titleSize = Math.round(headerH*0.6);
+  ctx.font = `bold ${titleSize}px ${fontChoice.value}`;
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  const titleX = W/2, titleY = margin + titleSize/1.1;
+  // contorno branco para destacar sobre imagem
+  ctx.lineWidth = Math.max(4, Math.round(titleSize*0.12));
+  ctx.strokeStyle = '#ffffff';
+  ctx.strokeText('ﾠ', titleX, titleY);
+  ctx.fillStyle = '#111111';
+  ctx.fillText('ﾠ', titleX, titleY);
+  ctx.restore();
+
+  // grid area (quadrado) centralizado verticalmente abaixo do título
+  const gridTop = titleY + headerH*0.2;
+  const cell = Math.floor(gridSize/5);
+  const gridW = cell*5;
+  const gridH = gridW;
+  const gridLeft = (W - gridW)/2;
+
+  // desenha imagem de fundo apenas dentro do grid (para manter o resto com cor sólida)
+  if(bgImage){
+    ctx.save();
+    // cria clipping region do grid
+    ctx.beginPath();
+    ctx.rect(gridLeft, gridTop, gridW, gridH);
+    ctx.clip();
+    ctx.globalAlpha = parseFloat(bgOpacityEl.value);
+    const ratio = Math.max(gridW/bgImage.width, gridH/bgImage.height);
+    const iw = bgImage.width*ratio, ih = bgImage.height*ratio;
+    const ix = gridLeft + (gridW - iw)/2;
+    const iy = gridTop + (gridH - ih)/2;
+    ctx.drawImage(bgImage, ix, iy, iw, ih);
+    ctx.restore();
+  }
+
+  // borda externa do grid
+  ctx.lineWidth = Math.max(3, Math.round(W*0.006));
+  ctx.strokeStyle = borderColorEl.value;
+  ctx.strokeRect(gridLeft-1, gridTop-1, gridW+2, gridH+2);
+
+  // linhas do grid
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#22222266';
+  for(let i=0;i<=5;i++){
+    const x = gridLeft + i*cell;
+    ctx.beginPath(); ctx.moveTo(x, gridTop); ctx.lineTo(x, gridTop+gridH); ctx.stroke();
+    const y = gridTop + i*cell;
+    ctx.beginPath(); ctx.moveTo(gridLeft, y); ctx.lineTo(gridLeft+gridW, y); ctx.stroke();
+  }
+
+  // desenha números
+  const outline = outlineColorEl.value;
+  const fillcol = numberFillEl.value;
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  const numFontSize = Math.round(cell*0.42);
+  ctx.font = `bold ${numFontSize}px Arial`;
+  for(let r=0;r<5;r++){
+    for(let c=0;c<5;c++){
+      const x = gridLeft + c*cell + cell/2;
+      const y = gridTop + r*cell + cell/2;
+      const val = currentMatrix[r][c];
+      ctx.save();
+      ctx.lineWidth = Math.max(6, Math.round(numFontSize*0.12));
+      ctx.strokeStyle = outline;
+      ctx.fillStyle = fillcol;
+      ctx.strokeText(val, x, y);
+      ctx.fillText(val, x, y);
+      ctx.restore();
+    }
+  }
+
+  // letras B I N G O sobre as colunas (menores e alinhadas)
+  const letterFontSize = Math.round(cell*0.26);
+  ctx.font = `700 ${letterFontSize}px Arial`;
+  ctx.fillStyle = '#111';
+  const letters = ['B','I','N','G','O'];
+  for(let c=0;c<5;c++){
+    const x = gridLeft + c*cell + cell/2;
+    const y = gridTop - Math.round(letterFontSize*0.9);
+    ctx.fillText(letters[c], x, y);
+  }
+}
+
+// Event listeners
+generateBtn.addEventListener('click', ()=>{
+  currentMatrix = generateNumbers();
+  drawCard();
+});
+
+// redraw on option changes
+[borderColorEl, outerColorEl, outlineColorEl, numberFillEl, bgOpacityEl, fontChoice, cardSizeEl].forEach(el=>{
+  el.addEventListener('input', ()=> drawCard());
+});
+
+// download
+downloadBtn.addEventListener('click', ()=>{
+  const link = document.createElement('a');
+  link.download = 'bingo_card.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// inicial
+window.addEventListener('load', ()=>{ drawCard(); });
+</script>
+</body>
+</html>
