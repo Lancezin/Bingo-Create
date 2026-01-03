@@ -58,11 +58,11 @@
         </select>
 
         <div style="margin-top:10px">
-          <button id="generate">Gerar números (aleatório justo)</button>
+          <button id="generate">Gerar números (aleatório justo + ordenado)</button>
           <button id="download" class="secondary">Baixar como PNG</button>
         </div>
 
-        <div class="hint">Regras implementadas: B 1-15, I 16-30, N 31-45 (centro = 00), G 46-60, O 61-75. Cada coluna sorteia números sem repetição.</div>
+        <div class="hint">Regras implementadas: B 1-15, I 16-30, N 31-45 (centro = 00), G 46-60, O 61-75. Cada coluna sorteia números sem repetição e os números são reordenados em ordem crescente de cima para baixo (N tem o centro fixo = 00).</div>
       </div>
     </div>
 
@@ -79,8 +79,8 @@
 
 <script>
 // Utilitários
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a }
+function range(a,b){ const r=[]; for(let i=a;i<=b;i++) r.push(i); return r }
 
 // Elementos
 const canvas=document.getElementById('cardCanvas');
@@ -99,6 +99,7 @@ const fontChoice=document.getElementById('fontChoice');
 let bgImage=null;
 let currentCardSize=parseInt(cardSizeEl.value,10);
 
+// carregar imagem do usuário (aplicada apenas dentro do grid)
 bgFileEl.addEventListener('change',e=>{
   const f = e.target.files[0];
   if(!f) { bgImage=null; drawCard(); return }
@@ -111,71 +112,81 @@ bgFileEl.addEventListener('change',e=>{
   reader.readAsDataURL(f);
 })
 
-// gera um cartão seguindo as regras do Bingo americano
+// Gera e ORDENA o cartão seguindo as regras do Bingo americano
 function generateNumbers(){
-  const B = shuffle(range(1,15)).slice(0,5);
-  const I = shuffle(range(16,30)).slice(0,5);
-  const Nvals = shuffle(range(31,45)).slice(0,4); // 4 números + centro = 00
-  const G = shuffle(range(46,60)).slice(0,5);
-  const O = shuffle(range(61,75)).slice(0,5);
-  // montar matriz 5x5 com center = '00'
+  // sort após o slice -> garante que as 5 (ou 4) escolhidas fiquem em ordem crescente
+  const B = shuffle(range(1,15)).slice(0,5).sort((a,b)=>a-b);
+  const I = shuffle(range(16,30)).slice(0,5).sort((a,b)=>a-b);
+  const Nvals = shuffle(range(31,45)).slice(0,4).sort((a,b)=>a-b); // 4 números + centro = 00
+  const G = shuffle(range(46,60)).slice(0,5).sort((a,b)=>a-b);
+  const O = shuffle(range(61,75)).slice(0,5).sort((a,b)=>a-b);
+
+  // montar matriz 5x5 com center = '00' e cada coluna em ordem crescente de cima para baixo
   const matrix = Array.from({length:5}, ()=>Array(5).fill(null));
+
+  // Coluna B (c=0) - rows 0..4 em ordem crescente
   for(let r=0;r<5;r++){ matrix[r][0]=String(B[r]).padStart(2,'0'); }
+
+  // Coluna I (c=1)
   for(let r=0;r<5;r++){ matrix[r][1]=String(I[r]).padStart(2,'0'); }
-  // coluna N -> r 0,1 -> Nvals[0..1]; r2 -> '00'; r3,r4 -> Nvals[2..3]
+
+  // Coluna N (c=2) - temos 4 valores ordenados; colocamos:
+  // row0 <- Nvals[0], row1 <- Nvals[1], row2 <- '00' (free), row3 <- Nvals[2], row4 <- Nvals[3]
   matrix[0][2]=String(Nvals[0]).padStart(2,'0');
   matrix[1][2]=String(Nvals[1]).padStart(2,'0');
   matrix[2][2]='00';
   matrix[3][2]=String(Nvals[2]).padStart(2,'0');
   matrix[4][2]=String(Nvals[3]).padStart(2,'0');
+
+  // Coluna G (c=3)
   for(let r=0;r<5;r++){ matrix[r][3]=String(G[r]).padStart(2,'0'); }
+
+  // Coluna O (c=4)
   for(let r=0;r<5;r++){ matrix[r][4]=String(O[r]).padStart(2,'0'); }
+
   return matrix;
 }
 
 let currentMatrix = generateNumbers();
 
-// Desenha o cartão no canvas com todas as opções
+// Desenha o cartão no canvas com todas as opções selecionadas
 function drawCard(){
   const W = canvas.width = parseInt(cardSizeEl.value,10);
-  const H = canvas.height = Math.round(W * 1.05); // deixamos proporção mais compacta
+  const H = canvas.height = Math.round(W * 1.05);
   currentCardSize = W;
+
   // limpar e preencher com cor externa sólida
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle = outerColorEl.value;
   ctx.fillRect(0,0,W,H);
 
-  // definir margem e header menores para centralizar melhor
+  // margem e header para centralizar
   const margin = Math.round(W*0.045);
   const headerH = Math.round(H*0.12);
   const gridSize = W - margin*2;
 
-  // título BINGO - somente a versão menor (como pediu)
+  // título (fixo, pequeno)
   ctx.save();
   const titleSize = Math.round(headerH*0.6);
   ctx.font = `bold ${titleSize}px ${fontChoice.value}`;
   ctx.textAlign='center';
   ctx.textBaseline='middle';
   const titleX = W/2, titleY = margin + titleSize/1.1;
-  // contorno branco para destacar sobre imagem
   ctx.lineWidth = Math.max(4, Math.round(titleSize*0.12));
   ctx.strokeStyle = '#ffffff';
-  ctx.strokeText('ﾠ', titleX, titleY);
   ctx.fillStyle = '#111111';
-  ctx.fillText('ﾠ', titleX, titleY);
   ctx.restore();
 
-  // grid area (quadrado) centralizado verticalmente abaixo do título
+  // grid central
   const gridTop = titleY + headerH*0.2;
   const cell = Math.floor(gridSize/5);
   const gridW = cell*5;
   const gridH = gridW;
   const gridLeft = (W - gridW)/2;
 
-  // desenha imagem de fundo apenas dentro do grid (para manter o resto com cor sólida)
+  // desenha imagem de fundo apenas dentro do grid (clipping)
   if(bgImage){
     ctx.save();
-    // cria clipping region do grid
     ctx.beginPath();
     ctx.rect(gridLeft, gridTop, gridW, gridH);
     ctx.clip();
@@ -203,7 +214,7 @@ function drawCard(){
     ctx.beginPath(); ctx.moveTo(gridLeft, y); ctx.lineTo(gridLeft+gridW, y); ctx.stroke();
   }
 
-  // desenha números
+  // desenha números (com contorno e preenchimento)
   const outline = outlineColorEl.value;
   const fillcol = numberFillEl.value;
   ctx.textAlign='center';
@@ -225,7 +236,7 @@ function drawCard(){
     }
   }
 
-  // letras B I N G O sobre as colunas (menores e alinhadas)
+  // letras B I N G O sobre as colunas
   const letterFontSize = Math.round(cell*0.26);
   ctx.font = `700 ${letterFontSize}px Arial`;
   ctx.fillStyle = '#111';
